@@ -172,24 +172,16 @@ class Resizer(object):
         return torch.from_numpy(new_image), torch.from_numpy(bboxes), torch.from_numpy(cls), is_crowd, image_id, scale
 
 class Normalizer(object):
-    def __init__(self, flip_prob=0.5):
+
+    def __init__(self):
         self.mean = np.array([[[0.485, 0.456, 0.406]]])
         self.std = np.array([[[0.229, 0.224, 0.225]]])
-        self.flip_prob = flip_prob  # Probability of flipping an image
 
     def __call__(self, sample):
-        image, bboxes, cls, is_crowd, image_id = sample
-        image = (image.astype(np.float32) - self.mean) / self.std
 
-        # Flip the image horizontally with a probability
-        if np.random.rand() < self.flip_prob:
-            image = np.fliplr(image)  # Flip the image horizontally
-            # Adjust bounding boxes accordingly
-            width = image.shape[1]
-            bboxes[:, [0, 2]] = width - bboxes[:, [2, 0]]  # Adjust x-coordinates
+        sample[0] = ((sample[0].astype(np.float32)-self.mean)/self.std)
 
-        return image, bboxes, cls, is_crowd, image_id
-
+        return sample
 
 class UnNormalizer(object):
     def __init__(self, mean=None, std=None):
@@ -251,9 +243,6 @@ def collater(data):
     else:
         bboxes_padded = torch.ones((len(bboxes), 1, 5)) * -1
         cls_padded = torch.ones((len(bboxes), 1, 5)) * -1
-
-
-
 
 
     padded_imgs = padded_imgs.permute(0, 3, 1, 2)
