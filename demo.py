@@ -8,7 +8,7 @@ from predict import validate, test
 from tensorboardX import SummaryWriter
 from absl import app, flags
 import numpy as np
-from mp3.dataset_c import CocoDataset, Resizer, Normalizer, collater
+from dataset import CocoDataset, Resizer, Normalizer, collater
 from torchvision import transforms
 import losses as losses
 import logging
@@ -55,7 +55,7 @@ def main(_):
     
     dataset_train = CocoDataset('train', seed=FLAGS.seed,
         preload_images=FLAGS.preload_images > 0,
-         transform=transforms.Compose([Normalizer(flip_prob=0.5), Resizer()])
+         transform=transforms.Compose([Normalizer(), Resizer()])
     )
     dataset_val = CocoDataset('val', seed=0, 
         preload_images=FLAGS.preload_images > 0,
@@ -79,12 +79,17 @@ def main(_):
     milestones = [int(x) for x in FLAGS.lr_step]
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer, milestones=milestones, gamma=0.1)
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=2000)
+
+    scheduler = torch.optim.lr_scheduler.ChainedScheduler([warmup_scheduler, scheduler])
     
     optimizer.zero_grad()
     dataloader_iter = None
     
     times_np, cls_loss_np, bbox_loss_np, total_loss_np = [], [], [], []
     lossFunc = losses.LossFunc()
+
+    max_grad_norm = 1.0
      
     for i in range(FLAGS.max_iter):
         iter_start_time = time.time()
@@ -122,6 +127,8 @@ def main(_):
             break
         
         total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+
 
         optimizer.step()
         optimizer.zero_grad()
@@ -172,5 +179,3 @@ def main(_):
 
 if __name__ == '__main__':
     app.run(main)
-
-
