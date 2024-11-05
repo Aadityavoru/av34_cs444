@@ -9,7 +9,7 @@ from PIL import ImageOps, Image
 import numpy as np
 import json
 import torchvision as tv
-from torchvision.transforms import transforms
+from torchvision.transforms import v2
 from torch.utils.data.sampler import Sampler
 import random
 from io import BytesIO
@@ -26,7 +26,7 @@ flags.DEFINE_string('coco_dir', './coco-animal', 'Directory with coco data')
 
 class CocoDataset(Dataset):
     def __init__(self, split='train', min_sizes=[800], 
-                 seed=0, transform=None, preload_images=False):
+                 seed=0, transform=None, preload_images=False, flip_prob=0.5):
         self.annotation_file = FLAGS.coco_dir + '/annotations/' + \
             f'instances_{split}2017-nocrowd.json'
         self.coco = CocoDetection(f'{FLAGS.coco_dir}/{split}2017/',
@@ -43,11 +43,13 @@ class CocoDataset(Dataset):
         self.cat_map = cat_map
         self.classes = classes
         self.num_classes = len(dt['categories'])
+        self.split = split
 
         self.rng = np.random.RandomState(seed=seed)
         self.min_sizes = min_sizes
         self.transform = transform
         self.preload_images = preload_images
+        self.flip_prob = flip_prob
         if self.preload_images:
             logging.info(f'Preloading {split} Images Strings into memory')
             self.image_strings = []
@@ -88,6 +90,11 @@ class CocoDataset(Dataset):
         # transform from [x, y, w, h] to [x1, y1, x2, y2]
         anno_bboxes[:, 2] = anno_bboxes[:, 0] + anno_bboxes[:, 2]
         anno_bboxes[:, 3] = anno_bboxes[:, 1] + anno_bboxes[:, 3]
+        
+        if self.split == "train" and random.random() < self.flip_prob:
+            image = ImageOps.mirror(image)
+            width = image.width
+            anno_bboxes[:, [0, 2]] = width - anno_bboxes[:, [2, 0]]
 
         if self.transform:
             image = np.asarray(image, dtype=np.float32) / 255
@@ -248,5 +255,3 @@ def collater(data):
     padded_imgs = padded_imgs.permute(0, 3, 1, 2)
 
     return padded_imgs, cls_padded.to(torch.int64), bboxes_padded, is_crowd, image_id, resize_factor
-
-
