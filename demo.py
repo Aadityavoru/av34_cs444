@@ -10,7 +10,7 @@ from absl import app, flags
 import numpy as np
 from dataset import CocoDataset, Resizer, Normalizer, collater
 from torchvision import transforms
-import losses as losses
+import losses
 import logging
 import time
 
@@ -23,7 +23,7 @@ flags.DEFINE_integer('batch_size', 1, 'Batch Size')
 flags.DEFINE_integer('seed', 2, 'Random seed')
 flags.DEFINE_integer('max_iter', 100000, 'Total Iterations')
 flags.DEFINE_integer('val_every', 10000, 'Iterations interval to validate')
-flags.DEFINE_integer('save_every', 50000, 'Iterations interval to validate')
+flags.DEFINE_integer('save_every', 20000, 'Iterations interval to validate')
 flags.DEFINE_integer('preload_images', 1, 
     'Weather to preload train and val images at beginning of training. Preloading takes about 7 minutes on campus cluster but speeds up training by a lot. Set to 0 to disable.')
 flags.DEFINE_multi_integer('lr_step', [60000, 80000], 'Iterations to reduce learning rate')
@@ -55,8 +55,7 @@ def main(_):
     
     dataset_train = CocoDataset('train', seed=FLAGS.seed,
         preload_images=FLAGS.preload_images > 0,
-         transform=transforms.Compose([Normalizer(), Resizer()])
-    )
+        transform=transforms.Compose([Normalizer(), Resizer()]))
     dataset_val = CocoDataset('val', seed=0, 
         preload_images=FLAGS.preload_images > 0,
         transform=transforms.Compose([Normalizer(), Resizer()]))
@@ -67,7 +66,7 @@ def main(_):
     num_classes = dataset_train.num_classes
     device = torch.device('cuda:0')
     # For Mac users
-    # device = torch.device("mps") 
+    #device = torch.device("mps") 
     model.to(device)
 
 
@@ -80,7 +79,6 @@ def main(_):
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer, milestones=milestones, gamma=0.1)
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=2000)
-
     scheduler = torch.optim.lr_scheduler.ChainedScheduler([warmup_scheduler, scheduler])
     
     optimizer.zero_grad()
@@ -88,8 +86,6 @@ def main(_):
     
     times_np, cls_loss_np, bbox_loss_np, total_loss_np = [], [], [], []
     lossFunc = losses.LossFunc()
-
-    max_grad_norm = 1.0
      
     for i in range(FLAGS.max_iter):
         iter_start_time = time.time()
@@ -127,8 +123,8 @@ def main(_):
             break
         
         total_loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-
+        
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         optimizer.step()
         optimizer.zero_grad()
@@ -179,3 +175,4 @@ def main(_):
 
 if __name__ == '__main__':
     app.run(main)
+    
