@@ -17,25 +17,6 @@ from torch.nn.utils import clip_grad_norm_  # Import gradient clipping utility
 
 import numpy as np
 
-
-class RandomFlip(object):
-    """Randomly flip an image horizontally with a probability and adjust bounding boxes."""
-    def __init__(self, flip_prob=0.5):
-        self.flip_prob = flip_prob
-
-    def __call__(self, sample):
-        image, bboxes, cls, is_crowd, image_id = sample
-
-        if np.random.rand() < self.flip_prob:
-            # Flip the image horizontally
-            image = np.fliplr(image).copy()
-
-            # Flip bounding boxes
-            width = image.shape[1]
-            bboxes[:, [0, 2]] = width - bboxes[:, [2, 0]]  # Adjust the bounding box coordinates
-
-        return image, bboxes, cls, is_crowd, image_id
-
 FLAGS = flags.FLAGS
 flags.DEFINE_float('lr', 1e-4, 'Learning Rate')
 flags.DEFINE_float('momentum', 0.9, 'Momentum for optimizer')
@@ -77,8 +58,10 @@ def main(_):
 
     # Use this updated transform in dataset_train
     dataset_train = CocoDataset(
-        'train', seed=FLAGS.seed, preload_images=FLAGS.preload_images > 0,  transform=transforms.Compose([Normalizer(), Resizer()])
+        'train', seed=FLAGS.seed, preload_images=FLAGS.preload_images > 0, 
+        transform=transforms.Compose([Normalizer(flip_prob=0.5), Resizer()])
     )
+
 
     dataset_val = CocoDataset('val', seed=0, 
         preload_images=FLAGS.preload_images > 0, 
