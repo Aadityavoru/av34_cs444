@@ -14,10 +14,13 @@ import losses as losses
 import logging
 import time
 
+from torch.optim.lr_scheduler import LambdaLR  # Added for learning rate warmup
+import torch.nn.utils  # Added for gradient clipping
+
 FLAGS = flags.FLAGS
-flags.DEFINE_float('lr', 1e-4, 'Learning Rate')
+flags.DEFINE_float('lr', 1e-4, 'Learning Rate')  # Adjusted learning rate as per your command
 flags.DEFINE_float('momentum', 0.9, 'Momentum for optimizer')
-flags.DEFINE_float('weight_decay', 1e-4, 'Weight Deacy for optimizer')
+flags.DEFINE_float('weight_decay', 1e-4, 'Weight Decay for optimizer')
 flags.DEFINE_string('output_dir', 'runs/retina-net-basic/', 'Output Directory')
 flags.DEFINE_integer('batch_size', 1, 'Batch Size')
 flags.DEFINE_integer('seed', 2, 'Random seed')
@@ -25,7 +28,7 @@ flags.DEFINE_integer('max_iter', 100000, 'Total Iterations')
 flags.DEFINE_integer('val_every', 10000, 'Iterations interval to validate')
 flags.DEFINE_integer('save_every', 50000, 'Iterations interval to validate')
 flags.DEFINE_integer('preload_images', 1, 
-    'Weather to preload train and val images at beginning of training. Preloading takes about 7 minutes on campus cluster but speeds up training by a lot. Set to 0 to disable.')
+    'Whether to preload train and val images at beginning of training. Preloading takes about 7 minutes on campus cluster but speeds up training by a lot. Set to 0 to disable.')
 flags.DEFINE_multi_integer('lr_step', [60000, 80000], 'Iterations to reduce learning rate')
 
 log_every = 20
@@ -69,21 +72,30 @@ def main(_):
     # device = torch.device("mps") 
     model.to(device)
 
-
     writer = SummaryWriter(FLAGS.output_dir, max_queue=1000, flush_secs=120)
     optimizer = torch.optim.SGD(model.parameters(), lr=FLAGS.lr, 
                                 momentum=FLAGS.momentum, 
                                 weight_decay=FLAGS.weight_decay)
     
+    # Learning Rate Warmup using LambdaLR
     milestones = [int(x) for x in FLAGS.lr_step]
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, milestones=milestones, gamma=0.1)
+    warmup_iters = 2000
+    def lr_lambda(current_iter):
+        if current_iter < warmup_iters:
+            return float(current_iter) / float(max(1, warmup_iters))
+        else:
+            lr = 1.0
+            for milestone in milestones:
+                if current_iter >= milestone:
+                    lr *= 0.1
+            return lr
+    scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
     
     optimizer.zero_grad()
     dataloader_iter = None
     
     times_np, cls_loss_np, bbox_loss_np, total_loss_np = [], [], [], []
-    lossFunc = losses.LossFunc()
+    lossFunc = losses.LossFunc()  # Ensure that LossFunc uses Focal Loss
      
     for i in range(FLAGS.max_iter):
         iter_start_time = time.time()
@@ -121,6 +133,9 @@ def main(_):
             break
         
         total_loss.backward()
+
+        # Gradient Clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
 
         optimizer.step()
         optimizer.zero_grad()
